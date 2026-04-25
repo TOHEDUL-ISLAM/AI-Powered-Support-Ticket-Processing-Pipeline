@@ -22,7 +22,9 @@
     "lint": "eslint src tests",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "migrate": "node-pg-migrate up",
-    "setup:infra": "bash scripts/setup-infra.sh"
+    "setup": "bash scripts/setup.sh",
+    "localstack:start": "docker compose -f ../docker-compose.yml up -d localstack",
+    "localstack:stop": "docker compose -f ../docker-compose.yml down"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1037.0",

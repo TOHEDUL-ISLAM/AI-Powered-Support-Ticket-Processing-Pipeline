@@ -1,0 +1,16 @@
+# US-1.2: LocalStack for local SQS dev and testing
+version: "3.8"
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - DEFAULT_REGION=${AWS_REGION:-us-east-1}
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+volumes:
+  localstack_data:

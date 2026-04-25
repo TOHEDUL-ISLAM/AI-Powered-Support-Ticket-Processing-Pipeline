@@ -6,14 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repo layout
 
-The repo root holds Python/uv tooling used **only** to run LocalStack. All application code lives under `server/`. Work in `server/` for every Node.js task.
+The repo root holds `docker-compose.yml` (LocalStack) and Python/uv tooling. All application code lives under `server/`. Work in `server/` for every Node.js task.
 
 ```
-/                         ← repo root (Python venv + LocalStack only)
+/                         ← repo root (docker-compose.yml lives here)
+├── docker-compose.yml    ← LocalStack service definition
 └── server/               ← Node.js microservice (work here)
     ├── src/              ← TypeScript source (CommonJS)
     ├── tests/            ← vitest suites (unit / integration / e2e)
-    └── scripts/          ← infra provisioning
+    └── scripts/          ← infra provisioning (setup.sh)
 ```
 
 ---
@@ -21,17 +22,14 @@ The repo root holds Python/uv tooling used **only** to run LocalStack. All appli
 ## Local dev startup sequence
 
 ```bash
-# 1 — Start LocalStack (repo root, separate terminal, keep it open)
-uv run localstack start
+# 1 — First-time only: provision LocalStack + Postgres (starts Docker automatically)
+cd server && npm run setup
 
-# 2 — Provision infra once (idempotent)
-cd server && npm run setup:infra
-
-# 3 — Dev server with hot-reload
+# 2 — Dev server with hot-reload
 npm run dev
 ```
 
-`localstack start` (without `uv run`) is NOT in PATH — always use `uv run localstack start`.
+LocalStack runs in Docker via `docker-compose.yml` at the repo root. `npm run setup` starts the container and provisions all queues in one shot. To start/stop the container independently: `npm run localstack:start` / `npm run localstack:stop`.
 
 ---
 
@@ -57,7 +55,9 @@ npx vitest run --reporter=verbose -t "DATABASE_URL"
 npm run lint               # eslint src/ tests/
 npm run format             # prettier write
 npm run migrate            # node-pg-migrate up
-npm run setup:infra        # provision Postgres DB + 4 SQS queues via LocalStack
+npm run setup              # first-time: start LocalStack + provision queues + create DB
+npm run localstack:start   # start LocalStack container only
+npm run localstack:stop    # stop LocalStack container
 ```
 
 ---
