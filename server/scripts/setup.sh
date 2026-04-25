@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# US-1.2: One-shot local environment setup — LocalStack (Docker) + PostgreSQL.
+# US-1.2: One-shot local environment setup — SQS queues (LocalStack) + PostgreSQL.
+# LocalStack must already be running: `uv run localstack start` from the repo root.
 # Run via: npm run setup  (from server/)
 # Idempotent — safe to run multiple times.
 
@@ -7,7 +8,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$SERVER_DIR/.." && pwd)"
 
 ENDPOINT="http://localhost:4566"
 REGION="${AWS_REGION:-us-east-1}"
@@ -18,34 +18,28 @@ err() { echo "[setup] ERROR: $*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 # 1. Prerequisites
 # ---------------------------------------------------------------------------
-docker info > /dev/null 2>&1 || err "Docker is not running. Start Docker Desktop or the Docker daemon first."
 command -v aws  > /dev/null 2>&1 || err "AWS CLI is not installed. See: https://aws.amazon.com/cli/"
 command -v psql > /dev/null 2>&1 || err "psql is not available. Install PostgreSQL client tools."
 
 # ---------------------------------------------------------------------------
-# 2. Start LocalStack
+# 2. Wait for LocalStack SQS
 # ---------------------------------------------------------------------------
-log "Starting LocalStack via Docker Compose..."
-docker compose -f "$REPO_ROOT/docker-compose.yml" up -d localstack
-log "LocalStack container started."
+log "Waiting for LocalStack to be ready..."
+log "(Start it with: uv run localstack start — from the repo root)"
 
-# ---------------------------------------------------------------------------
-# 3. Wait for LocalStack SQS
-# ---------------------------------------------------------------------------
-log "Waiting for LocalStack SQS to be ready..."
 for i in $(seq 1 30); do
   if curl -sf "$ENDPOINT/_localstack/health" 2>/dev/null | grep -q '"sqs"'; then
     break
   fi
   if [ "$i" -eq 30 ]; then
-    err "LocalStack did not become ready after 30s. Check: docker compose logs localstack"
+    err "LocalStack did not become ready after 30s. Run: uv run localstack start (from repo root)"
   fi
   sleep 1
 done
 log "LocalStack is ready."
 
 # ---------------------------------------------------------------------------
-# 4. SQS — DLQs first, then main queues with redrive policies
+# 3. SQS — DLQs first, then main queues with redrive policies
 # ---------------------------------------------------------------------------
 log "Provisioning SQS queues..."
 
@@ -98,7 +92,7 @@ echo "  SQS_PHASE2_DLQ_URL=http://localhost:4566/000000000000/phase2DLQ"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 5. PostgreSQL database
+# 4. PostgreSQL database
 # ---------------------------------------------------------------------------
 log "Setting up PostgreSQL database..."
 
