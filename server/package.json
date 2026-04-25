@@ -24,7 +24,9 @@
     "migrate": "node-pg-migrate up",
     "setup": "bash scripts/setup.sh",
     "postgres:start": "docker compose -f ../docker-compose.yml up -d postgres",
-    "postgres:stop": "docker compose -f ../docker-compose.yml stop postgres"
+    "postgres:stop": "docker compose -f ../docker-compose.yml stop postgres",
+    "localstack:start": "cd .. && uv run localstack start",
+    "localstack:stop": "cd .. && uv run localstack stop"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1037.0",

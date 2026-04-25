@@ -1,6 +1,4 @@
 # US-1.2: PostgreSQL for local dev and testing
-version: "3.8"
-
 services:
   postgres:
     image: postgres:16
