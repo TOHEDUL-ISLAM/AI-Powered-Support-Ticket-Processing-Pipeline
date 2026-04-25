@@ -15,11 +15,14 @@ REGION="${AWS_REGION:-us-east-1}"
 log() { echo "[setup] $*"; }
 err() { echo "[setup] ERROR: $*" >&2; exit 1; }
 
+# awslocal lives in the uv venv at REPO_ROOT — run it from there
+awslocal() { (cd "$REPO_ROOT" && uv run awslocal "$@"); }
+
 # ---------------------------------------------------------------------------
 # 1. Prerequisites
 # ---------------------------------------------------------------------------
 docker info > /dev/null 2>&1 || err "Docker is not running. Start it first."
-command -v aws > /dev/null 2>&1 || err "AWS CLI is not installed. See: https://aws.amazon.com/cli/"
+command -v uv > /dev/null 2>&1 || err "uv is not installed. See: https://docs.astral.sh/uv/getting-started/installation/"
 
 # ---------------------------------------------------------------------------
 # 2. Start PostgreSQL container
@@ -66,41 +69,41 @@ log "  ✓ LocalStack is ready."
 # ---------------------------------------------------------------------------
 log "Provisioning SQS queues..."
 
-aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+awslocal --region="$REGION" \
   sqs create-queue --queue-name phase1DLQ \
   --attributes MessageRetentionPeriod=1209600,VisibilityTimeout=60 \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase1DLQ"
 
-aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+awslocal --region="$REGION" \
   sqs create-queue --queue-name phase2DLQ \
   --attributes MessageRetentionPeriod=1209600,VisibilityTimeout=60 \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase2DLQ"
 
-PHASE1_DLQ_URL=$(aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+PHASE1_DLQ_URL=$(awslocal --region="$REGION" \
   sqs get-queue-url --queue-name phase1DLQ --query 'QueueUrl' --output text)
 
-PHASE2_DLQ_URL=$(aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+PHASE2_DLQ_URL=$(awslocal --region="$REGION" \
   sqs get-queue-url --queue-name phase2DLQ --query 'QueueUrl' --output text)
 
-PHASE1_DLQ_ARN=$(aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+PHASE1_DLQ_ARN=$(awslocal --region="$REGION" \
   sqs get-queue-attributes --queue-url="$PHASE1_DLQ_URL" \
   --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
 
-PHASE2_DLQ_ARN=$(aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+PHASE2_DLQ_ARN=$(awslocal --region="$REGION" \
   sqs get-queue-attributes --queue-url="$PHASE2_DLQ_URL" \
   --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
 
 PHASE1_REDRIVE="{\"deadLetterTargetArn\":\"${PHASE1_DLQ_ARN}\",\"maxReceiveCount\":\"3\"}"
-aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+awslocal --region="$REGION" \
   sqs create-queue --queue-name phase1Queue \
   --attributes "VisibilityTimeout=90,MessageRetentionPeriod=345600,RedrivePolicy=${PHASE1_REDRIVE}" \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase1Queue  (VisibilityTimeout=90s, redrive → phase1DLQ, maxReceiveCount=3)"
 
 PHASE2_REDRIVE="{\"deadLetterTargetArn\":\"${PHASE2_DLQ_ARN}\",\"maxReceiveCount\":\"3\"}"
-aws --endpoint-url="$ENDPOINT" --region="$REGION" \
+awslocal --region="$REGION" \
   sqs create-queue --queue-name phase2Queue \
   --attributes "VisibilityTimeout=90,MessageRetentionPeriod=345600,RedrivePolicy=${PHASE2_REDRIVE}" \
   --output text --query 'QueueUrl' > /dev/null
