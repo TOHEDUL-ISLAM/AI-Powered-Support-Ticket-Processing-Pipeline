@@ -22,7 +22,9 @@
     "lint": "eslint src tests",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "migrate": "node-pg-migrate up",
-    "setup": "bash scripts/setup.sh"
+    "setup": "bash scripts/setup.sh",
+    "postgres:start": "docker compose -f ../docker-compose.yml up -d postgres",
+    "postgres:stop": "docker compose -f ../docker-compose.yml stop postgres"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1037.0",

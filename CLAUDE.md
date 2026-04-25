@@ -9,7 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The repo root holds Python/uv tooling used to run LocalStack. All application code lives under `server/`. Work in `server/` for every Node.js task.
 
 ```
-/                         ← repo root (uv/Python — LocalStack lives here)
+/                         ← repo root
+├── docker-compose.yml    ← PostgreSQL service (port 5432)
 ├── pyproject.toml        ← uv project with localstack dependency
 └── server/               ← Node.js microservice (work here)
     ├── src/              ← TypeScript source (CommonJS)
@@ -25,14 +26,17 @@ The repo root holds Python/uv tooling used to run LocalStack. All application co
 # 1 — Start LocalStack (repo root, separate terminal, keep it open)
 uv run localstack start
 
-# 2 — Provision queues + DB once (idempotent, from server/)
+# 2 — First-time only: provision Postgres (Docker) + SQS queues (from server/)
 npm run setup
 
 # 3 — Dev server with hot-reload
 npm run dev
 ```
 
-`localstack` is NOT in PATH directly — always use `uv run localstack start` from the repo root. `npm run setup` expects LocalStack to already be running; it will wait up to 30s and print a clear error if it isn't.
+- `localstack` is NOT in PATH — always `uv run localstack start` from repo root
+- PostgreSQL runs in Docker via `docker-compose.yml` — started automatically by `npm run setup`
+- To start/stop Postgres independently: `npm run postgres:start` / `npm run postgres:stop`
+- Credentials: `ticket_user` / `ticket_pass`, DB: `ai_ticket_pipeline`, port `5432`
 
 ---
 

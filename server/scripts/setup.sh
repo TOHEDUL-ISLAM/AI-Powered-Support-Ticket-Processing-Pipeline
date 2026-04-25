@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# US-1.2: One-shot local environment setup — SQS queues (LocalStack) + PostgreSQL.
+# US-1.2: One-shot local environment setup — PostgreSQL (Docker) + SQS queues (LocalStack).
 # LocalStack must already be running: `uv run localstack start` from the repo root.
 # Run via: npm run setup  (from server/)
 # Idempotent — safe to run multiple times.
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ENDPOINT="http://localhost:4566"
 REGION="${AWS_REGION:-us-east-1}"
@@ -18,11 +18,34 @@ err() { echo "[setup] ERROR: $*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 # 1. Prerequisites
 # ---------------------------------------------------------------------------
-command -v aws  > /dev/null 2>&1 || err "AWS CLI is not installed. See: https://aws.amazon.com/cli/"
-command -v psql > /dev/null 2>&1 || err "psql is not available. Install PostgreSQL client tools."
+docker info > /dev/null 2>&1 || err "Docker is not running. Start it first."
+command -v aws > /dev/null 2>&1 || err "AWS CLI is not installed. See: https://aws.amazon.com/cli/"
 
 # ---------------------------------------------------------------------------
-# 2. Wait for LocalStack SQS
+# 2. Start PostgreSQL container
+# ---------------------------------------------------------------------------
+log "Starting PostgreSQL via Docker Compose..."
+docker compose -f "$REPO_ROOT/docker-compose.yml" up -d postgres
+log "PostgreSQL container started."
+
+# ---------------------------------------------------------------------------
+# 3. Wait for PostgreSQL to be ready
+# ---------------------------------------------------------------------------
+log "Waiting for PostgreSQL to be ready..."
+for i in $(seq 1 30); do
+  if docker compose -f "$REPO_ROOT/docker-compose.yml" exec -T postgres \
+      pg_isready -U ticket_user -d ai_ticket_pipeline > /dev/null 2>&1; then
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    err "PostgreSQL did not become ready after 30s. Check: docker compose logs postgres"
+  fi
+  sleep 1
+done
+log "  ✓ PostgreSQL is ready."
+
+# ---------------------------------------------------------------------------
+# 4. Wait for LocalStack SQS
 # ---------------------------------------------------------------------------
 log "Waiting for LocalStack to be ready..."
 log "(Start it with: uv run localstack start — from the repo root)"
@@ -36,10 +59,10 @@ for i in $(seq 1 30); do
   fi
   sleep 1
 done
-log "LocalStack is ready."
+log "  ✓ LocalStack is ready."
 
 # ---------------------------------------------------------------------------
-# 3. SQS — DLQs first, then main queues with redrive policies
+# 5. SQS — DLQs first, then main queues with redrive policies
 # ---------------------------------------------------------------------------
 log "Provisioning SQS queues..."
 
@@ -84,33 +107,12 @@ aws --endpoint-url="$ENDPOINT" --region="$REGION" \
 log "  ✓ phase2Queue  (VisibilityTimeout=90s, redrive → phase2DLQ, maxReceiveCount=3)"
 
 echo ""
-echo "  Paste these into your .env:"
+echo "  SQS URLs (already in your .env):"
 echo "  SQS_PHASE1_QUEUE_URL=http://localhost:4566/000000000000/phase1Queue"
 echo "  SQS_PHASE2_QUEUE_URL=http://localhost:4566/000000000000/phase2Queue"
 echo "  SQS_PHASE1_DLQ_URL=http://localhost:4566/000000000000/phase1DLQ"
 echo "  SQS_PHASE2_DLQ_URL=http://localhost:4566/000000000000/phase2DLQ"
 echo ""
-
-# ---------------------------------------------------------------------------
-# 4. PostgreSQL database
-# ---------------------------------------------------------------------------
-log "Setting up PostgreSQL database..."
-
-ENV_FILE="$SERVER_DIR/.env"
-[ -f "$ENV_FILE" ] || err ".env not found. Run: cp .env.example .env and fill in DATABASE_URL."
-
-DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-[ -n "$DB_URL" ] || err "DATABASE_URL is empty in .env. Set it before running setup."
-
-DB_NAME=$(echo "$DB_URL" | sed 's|.*/||' | sed 's|?.*||')
-ADMIN_URL=$(echo "$DB_URL" | sed "s|/${DB_NAME}.*|/postgres|")
-
-if psql "$DB_URL" -c "SELECT 1" > /dev/null 2>&1; then
-  log "  ✓ Database '${DB_NAME}' already exists."
-else
-  psql "$ADMIN_URL" -c "CREATE DATABASE \"${DB_NAME}\";" > /dev/null 2>&1
-  log "  ✓ Database '${DB_NAME}' created."
-fi
 
 log "Done. Local environment is ready."
 log "Next: npm run dev"
