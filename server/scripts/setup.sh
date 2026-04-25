@@ -95,14 +95,14 @@ PHASE2_DLQ_ARN=$(awslocal --region="$REGION" \
   sqs get-queue-attributes --queue-url="$PHASE2_DLQ_URL" \
   --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
 
-PHASE1_ATTRS=$(printf '{"VisibilityTimeout":"90","MessageRetentionPeriod":"345600","RedrivePolicy":"{\"deadLetterTargetArn\":\"%s\",\"maxReceiveCount\":\"3\"}"}' "$PHASE1_DLQ_ARN")
+PHASE1_ATTRS=$(printf '{"VisibilityTimeout":"90","MessageRetentionPeriod":"345600","RedrivePolicy":"{\\"deadLetterTargetArn\\":\\"%s\\",\\"maxReceiveCount\\":\\"3\\"}"}' "$PHASE1_DLQ_ARN")
 awslocal --region="$REGION" \
   sqs create-queue --queue-name phase1Queue \
   --attributes "$PHASE1_ATTRS" \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase1Queue  (VisibilityTimeout=90s, redrive → phase1DLQ, maxReceiveCount=3)"
 
-PHASE2_ATTRS=$(printf '{"VisibilityTimeout":"90","MessageRetentionPeriod":"345600","RedrivePolicy":"{\"deadLetterTargetArn\":\"%s\",\"maxReceiveCount\":\"3\"}"}' "$PHASE2_DLQ_ARN")
+PHASE2_ATTRS=$(printf '{"VisibilityTimeout":"90","MessageRetentionPeriod":"345600","RedrivePolicy":"{\\"deadLetterTargetArn\\":\\"%s\\",\\"maxReceiveCount\\":\\"3\\"}"}' "$PHASE2_DLQ_ARN")
 awslocal --region="$REGION" \
   sqs create-queue --queue-name phase2Queue \
   --attributes "$PHASE2_ATTRS" \
