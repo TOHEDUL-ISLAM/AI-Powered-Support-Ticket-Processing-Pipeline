@@ -1,0 +1,4 @@
+{
+  "migrationsDir": "src/migrations",
+  "databaseUrlEnv": "DATABASE_URL"
+}
