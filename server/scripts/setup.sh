@@ -71,13 +71,13 @@ log "Provisioning SQS queues..."
 
 awslocal --region="$REGION" \
   sqs create-queue --queue-name phase1DLQ \
-  --attributes MessageRetentionPeriod=1209600,VisibilityTimeout=60 \
+  --attributes '{"MessageRetentionPeriod":"1209600","VisibilityTimeout":"60"}' \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase1DLQ"
 
 awslocal --region="$REGION" \
   sqs create-queue --queue-name phase2DLQ \
-  --attributes MessageRetentionPeriod=1209600,VisibilityTimeout=60 \
+  --attributes '{"MessageRetentionPeriod":"1209600","VisibilityTimeout":"60"}' \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase2DLQ"
 
@@ -95,17 +95,17 @@ PHASE2_DLQ_ARN=$(awslocal --region="$REGION" \
   sqs get-queue-attributes --queue-url="$PHASE2_DLQ_URL" \
   --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
 
-PHASE1_REDRIVE="{\"deadLetterTargetArn\":\"${PHASE1_DLQ_ARN}\",\"maxReceiveCount\":\"3\"}"
+PHASE1_ATTRS=$(printf '{"VisibilityTimeout":"90","MessageRetentionPeriod":"345600","RedrivePolicy":"{\"deadLetterTargetArn\":\"%s\",\"maxReceiveCount\":\"3\"}"}' "$PHASE1_DLQ_ARN")
 awslocal --region="$REGION" \
   sqs create-queue --queue-name phase1Queue \
-  --attributes "VisibilityTimeout=90,MessageRetentionPeriod=345600,RedrivePolicy=${PHASE1_REDRIVE}" \
+  --attributes "$PHASE1_ATTRS" \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase1Queue  (VisibilityTimeout=90s, redrive → phase1DLQ, maxReceiveCount=3)"
 
-PHASE2_REDRIVE="{\"deadLetterTargetArn\":\"${PHASE2_DLQ_ARN}\",\"maxReceiveCount\":\"3\"}"
+PHASE2_ATTRS=$(printf '{"VisibilityTimeout":"90","MessageRetentionPeriod":"345600","RedrivePolicy":"{\"deadLetterTargetArn\":\"%s\",\"maxReceiveCount\":\"3\"}"}' "$PHASE2_DLQ_ARN")
 awslocal --region="$REGION" \
   sqs create-queue --queue-name phase2Queue \
-  --attributes "VisibilityTimeout=90,MessageRetentionPeriod=345600,RedrivePolicy=${PHASE2_REDRIVE}" \
+  --attributes "$PHASE2_ATTRS" \
   --output text --query 'QueueUrl' > /dev/null
 log "  ✓ phase2Queue  (VisibilityTimeout=90s, redrive → phase2DLQ, maxReceiveCount=3)"
 
