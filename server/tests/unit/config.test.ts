@@ -27,7 +27,7 @@ function runConfig(env: NodeJS.ProcessEnv) {
   return spawnSync(TSX_BIN, [CONFIG_ENTRY], {
     env,
     encoding: 'utf8',
-    cwd: ROOT,
+    cwd: path.join(ROOT, 'tests'),
   });
 }
 
@@ -39,14 +39,16 @@ describe('config module', () => {
   });
 
   it('exits 1 and names DATABASE_URL when it is missing', () => {
-    const { DATABASE_URL: _omit, ...envWithout } = VALID_ENV;
+    const envWithout = { ...VALID_ENV };
+    delete envWithout.DATABASE_URL;
     const result = runConfig(envWithout);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('DATABASE_URL');
   });
 
   it('exits 1 and names PORTKEY_API_KEY when it is missing', () => {
-    const { PORTKEY_API_KEY: _omit, ...envWithout } = VALID_ENV;
+    const envWithout = { ...VALID_ENV };
+    delete envWithout.PORTKEY_API_KEY;
     const result = runConfig(envWithout);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('PORTKEY_API_KEY');
