@@ -6,6 +6,7 @@ export function createTicketsRouter(controller: TicketController): Router {
   const router = Router();
 
   router.post('/tickets', (req, res, next) => controller.create(req, res, next));
+  router.get('/tickets/:id', (req, res, next) => controller.get(req, res, next));
 
   return router;
 }

@@ -1,5 +1,6 @@
-// US-1.5: handle POST /tickets — validate, log, delegate to service, respond
+// US-1.5: handle POST /tickets and GET /tickets/:id — validate, log, delegate to service, respond
 import type { NextFunction, Request, Response } from 'express';
+import { z } from 'zod';
 import type { Logger } from '../logger';
 import { CreateTicketSchema, formatZodErrors } from '../schemas/ticket.schema';
 import type { ITicketService } from '../services/ticket.service';
@@ -37,6 +38,25 @@ export class TicketController {
         createdAt: ticket.created_at,
       });
       this.logger.info({ event: 'ticket.response_sent', ticketId: ticket.id, status: ticket.status });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async get(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const parsed = z.string().uuid().safeParse(req.params.id);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_ticket_id' });
+      return;
+    }
+
+    try {
+      const ticket = await this.service.getById(parsed.data);
+      if (!ticket) {
+        res.status(404).json({ error: 'ticket_not_found' });
+        return;
+      }
+      res.status(200).json(ticket);
     } catch (err) {
       next(err);
     }
