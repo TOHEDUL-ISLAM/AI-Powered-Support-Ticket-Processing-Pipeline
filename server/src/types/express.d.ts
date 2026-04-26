@@ -1,7 +1,10 @@
-// US-1.7: Express request extensions used by middleware
-declare namespace Express {
-  export interface Request {
-    id?: string;
+// US-2.1: extend Express Request with request-id field set in app middleware
+declare global {
+  namespace Express {
+    interface Request {
+      id: string;
+    }
   }
 }
+export {};
 

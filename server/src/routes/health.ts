@@ -1,25 +1,11 @@
-// US-1.7: /health route reporting database and main queue reachability
+// US-1.7: /health route wiring
 import { Router } from 'express';
-import type { HealthChecks } from '../health/checks';
-import { getHealth } from '../health/service';
+import type { HealthController } from '../controllers/health.controller';
 
-const packageJson = require('../../package.json') as { version: string };
-
-export interface HealthRouterOptions {
-  healthChecks?: HealthChecks;
-}
-
-export function createHealthRouter(options: HealthRouterOptions = {}): Router {
+export function createHealthRouter(controller: HealthController): Router {
   const router = Router();
 
-  router.get('/health', async (_req, res, next) => {
-    try {
-      const health = await getHealth(packageJson.version, options.healthChecks);
-      res.status(health.status === 'ok' ? 200 : 503).json(health);
-    } catch (err) {
-      next(err);
-    }
-  });
+  router.get('/health', (req, res, next) => controller.getHealth(req, res, next));
 
   return router;
 }
