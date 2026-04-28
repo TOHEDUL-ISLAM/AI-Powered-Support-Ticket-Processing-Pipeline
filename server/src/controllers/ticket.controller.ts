@@ -1,4 +1,4 @@
-// US-1.5: handle POST /tickets and GET /tickets/:id — validate, log, delegate to service, respond
+// US-1.5 + US-5.3: handle POST /tickets, GET /tickets/:id, POST /tickets/:id/replay
 import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import type { Logger } from '../logger';
@@ -57,6 +57,29 @@ export class TicketController {
         return;
       }
       res.status(200).json(ticket);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async replay(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const parsed = z.string().uuid().safeParse(req.params.id);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_ticket_id' });
+      return;
+    }
+
+    try {
+      const result = await this.service.replay(parsed.data);
+      if (result.outcome === 'not_found') {
+        res.status(404).json({ error: 'ticket_not_found' });
+        return;
+      }
+      if (result.outcome === 'not_failed') {
+        res.status(409).json({ error: 'ticket_not_permanently_failed' });
+        return;
+      }
+      res.status(202).json({ ticketId: parsed.data });
     } catch (err) {
       next(err);
     }

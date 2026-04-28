@@ -6,12 +6,23 @@ import { pool } from '../../src/db';
 import type { ITicketQueue } from '../../src/queue/ticket.queue';
 
 class PassingQueue implements ITicketQueue {
-  async enqueue(_ticketId: string): Promise<void> {}
+  async enqueue(ticketId: string): Promise<void> {
+    void ticketId;
+  }
 }
 
 class FailingQueue implements ITicketQueue {
-  async enqueue(_ticketId: string): Promise<void> {
+  async enqueue(ticketId: string): Promise<void> {
+    void ticketId;
     throw new Error('sqs_unavailable');
+  }
+}
+
+class RecordingQueue implements ITicketQueue {
+  readonly ticketIds: string[] = [];
+
+  async enqueue(ticketId: string): Promise<void> {
+    this.ticketIds.push(ticketId);
   }
 }
 
@@ -77,7 +88,11 @@ describe('POST /tickets', () => {
 
   it('returns 400 with field-specific issues when subject is missing', async () => {
     const app = createApp({ ticketQueue: new PassingQueue() });
-    const { subject: _, ...bodyWithoutSubject } = VALID_BODY;
+    const bodyWithoutSubject = {
+      body: VALID_BODY.body,
+      submitter: VALID_BODY.submitter,
+      tenant_id: VALID_BODY.tenant_id,
+    };
 
     const response = await request(app).post('/tickets').send(bodyWithoutSubject).expect(400);
 
@@ -206,3 +221,106 @@ describe('GET /tickets/:id', () => {
     }
   });
 });
+
+// ─── POST /tickets/:id/replay ────────────────────────────────────────────────
+
+describe('POST /tickets/:id/replay', () => {
+  it('replays from triage when Step 1 permanently failed', async () => {
+    const phase1Queue = new RecordingQueue();
+    const phase2Queue = new RecordingQueue();
+    const app = createApp({ ticketQueue: phase1Queue, phase2Queue });
+    const ticketId = await insertTicket('failed');
+    await insertPhase(ticketId, 'triage', 'permanently_failed');
+    createdIds.push(ticketId);
+
+    const response = await request(app).post(`/tickets/${ticketId}/replay`).expect(202);
+
+    expect(response.body.ticketId).toBe(ticketId);
+    expect(phase1Queue.ticketIds).toEqual([ticketId]);
+    expect(phase2Queue.ticketIds).toEqual([]);
+
+    const ticket = await pool.query<{ status: string }>('SELECT status FROM tickets WHERE id = $1', [
+      ticketId,
+    ]);
+    const phase = await getPhase(ticketId, 'triage');
+    expect(ticket.rows[0].status).toBe('queued');
+    expect(phase).toMatchObject({
+      status: 'pending',
+      attempt_count: 0,
+      result: null,
+    });
+  });
+
+  it('replays from resolution while preserving successful triage', async () => {
+    const phase1Queue = new RecordingQueue();
+    const phase2Queue = new RecordingQueue();
+    const app = createApp({ ticketQueue: phase1Queue, phase2Queue });
+    const ticketId = await insertTicket('failed');
+    await insertPhase(ticketId, 'triage', 'success', { category: 'billing' });
+    await insertPhase(ticketId, 'resolution', 'permanently_failed');
+    createdIds.push(ticketId);
+
+    await request(app).post(`/tickets/${ticketId}/replay`).expect(202);
+
+    expect(phase1Queue.ticketIds).toEqual([]);
+    expect(phase2Queue.ticketIds).toEqual([ticketId]);
+
+    const triage = await getPhase(ticketId, 'triage');
+    const resolution = await getPhase(ticketId, 'resolution');
+    expect(triage).toMatchObject({
+      status: 'success',
+      attempt_count: 1,
+      result: { category: 'billing' },
+    });
+    expect(resolution).toMatchObject({
+      status: 'pending',
+      attempt_count: 0,
+      result: null,
+    });
+  });
+
+  it('returns 409 when the ticket is not permanently failed', async () => {
+    const app = createApp({ ticketQueue: new RecordingQueue(), phase2Queue: new RecordingQueue() });
+    const ticketId = await insertTicket('queued');
+    createdIds.push(ticketId);
+
+    const response = await request(app).post(`/tickets/${ticketId}/replay`).expect(409);
+
+    expect(response.body.error).toBe('ticket_not_permanently_failed');
+  });
+
+  it('returns 404 when replay is requested for a missing ticket', async () => {
+    const app = createApp({ ticketQueue: new RecordingQueue(), phase2Queue: new RecordingQueue() });
+
+    const response = await request(app)
+      .post('/tickets/00000000-0000-0000-0000-000000000000/replay')
+      .expect(404);
+
+    expect(response.body.error).toBe('ticket_not_found');
+  });
+
+  it('returns 400 when replay is requested with a non-UUID ticket id', async () => {
+    const app = createApp({ ticketQueue: new RecordingQueue(), phase2Queue: new RecordingQueue() });
+
+    const response = await request(app).post('/tickets/not-a-uuid/replay').expect(400);
+
+    expect(response.body.error).toBe('invalid_ticket_id');
+  });
+});
+
+async function getPhase(
+  ticketId: string,
+  stepName: string,
+): Promise<{
+  status: string;
+  attempt_count: number;
+  result: Record<string, unknown> | null;
+} | null> {
+  const result = await pool.query(
+    `SELECT status, attempt_count, result
+     FROM ticket_phases
+     WHERE ticket_id = $1 AND step_name = $2`,
+    [ticketId, stepName],
+  );
+  return result.rows[0] ?? null;
+}

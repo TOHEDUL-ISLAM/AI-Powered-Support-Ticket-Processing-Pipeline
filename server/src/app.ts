@@ -18,6 +18,7 @@ import { TicketQueue } from './queue/ticket.queue';
 export interface AppOptions {
   healthRepository?: IHealthRepository;
   ticketQueue?: ITicketQueue;
+  phase2Queue?: ITicketQueue;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -40,8 +41,9 @@ export function createApp(options: AppOptions = {}) {
   const healthController = new HealthController(healthService);
 
   const ticketQueue = options.ticketQueue ?? new TicketQueue(sqsClient, config.SQS_PHASE1_QUEUE_URL);
+  const phase2Queue = options.phase2Queue ?? new TicketQueue(sqsClient, config.SQS_PHASE2_QUEUE_URL);
   const ticketRepository = new TicketRepository();
-  const ticketService = new TicketService(ticketRepository, ticketQueue, logger);
+  const ticketService = new TicketService(ticketRepository, ticketQueue, phase2Queue, logger);
   const ticketController = new TicketController(ticketService, logger);
 
   app.use(express.json({ limit: '100kb' }));

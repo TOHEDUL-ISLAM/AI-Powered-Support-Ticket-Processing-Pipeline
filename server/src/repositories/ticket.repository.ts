@@ -33,6 +33,9 @@ export interface RawTicketRow {
 export interface ITicketRepository {
   create(client: PoolClient, data: CreateTicketInput): Promise<Ticket>;
   getById(id: string): Promise<RawTicketRow | null>;
+  resetPhase(client: PoolClient, ticketId: string, stepName: 'triage' | 'resolution'): Promise<void>;
+  setStatusQueued(client: PoolClient, ticketId: string): Promise<void>;
+  writeReplayEvent(client: PoolClient, ticketId: string, stepName: string): Promise<void>;
 }
 
 export class TicketRepository implements ITicketRepository {
@@ -61,5 +64,40 @@ export class TicketRepository implements ITicketRepository {
       [id],
     );
     return result.rows[0] ?? null;
+  }
+
+  async resetPhase(
+    client: PoolClient,
+    ticketId: string,
+    stepName: 'triage' | 'resolution',
+  ): Promise<void> {
+    await client.query(
+      `UPDATE ticket_phases
+       SET status = 'pending',
+           attempt_count = 0,
+           result = null,
+           error_message = null,
+           provider_used = null,
+           started_at = null,
+           finished_at = null,
+           updated_at = now()
+       WHERE ticket_id = $1 AND step_name = $2`,
+      [ticketId, stepName],
+    );
+  }
+
+  async setStatusQueued(client: PoolClient, ticketId: string): Promise<void> {
+    await client.query(
+      `UPDATE tickets SET status = 'queued', updated_at = now() WHERE id = $1`,
+      [ticketId],
+    );
+  }
+
+  async writeReplayEvent(client: PoolClient, ticketId: string, stepName: string): Promise<void> {
+    await client.query(
+      `INSERT INTO ticket_events (ticket_id, event_type, step_name, metadata)
+       VALUES ($1, 'replay_requested', $2, $3::jsonb)`,
+      [ticketId, stepName, JSON.stringify({ reset_attempt_count: 0 })],
+    );
   }
 }

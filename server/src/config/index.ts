@@ -25,6 +25,11 @@ const schema = z.object({
 
   PORTKEY_API_KEY: z.string().min(1),
   PORTKEY_CONFIG_ID: z.string().min(1),
+  PORTKEY_PRIMARY_PROVIDER: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value) => value.toLowerCase()),
 });
 
 const result = schema.safeParse(process.env);

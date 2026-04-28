@@ -12,16 +12,30 @@ import { TicketService } from '../../src/services/ticket.service';
 import { createLogger } from '../../src/logger';
 
 class FakeQueue implements ITicketQueue {
-  async enqueue(_id: string): Promise<void> {}
+  async enqueue(id: string): Promise<void> {
+    void id;
+  }
 }
 
 function makeRepo(row: RawTicketRow | null): ITicketRepository {
   return {
-    async create(_client: PoolClient, _data: CreateTicketInput): Promise<Ticket> {
+    async create(client: PoolClient, data: CreateTicketInput): Promise<Ticket> {
+      void client;
+      void data;
       throw new Error('not used in these tests');
     },
-    async getById(_id: string): Promise<RawTicketRow | null> {
+    async getById(id: string): Promise<RawTicketRow | null> {
+      void id;
       return row;
+    },
+    async resetPhase(client, ticketId, stepName): Promise<void> {
+      void client; void ticketId; void stepName;
+    },
+    async setStatusQueued(client, ticketId): Promise<void> {
+      void client; void ticketId;
+    },
+    async writeReplayEvent(client, ticketId, stepName): Promise<void> {
+      void client; void ticketId; void stepName;
     },
   };
 }
@@ -42,13 +56,13 @@ describe('TicketService.getById — response shaping', () => {
   const logger = createLogger();
 
   it('returns null when ticket does not exist', async () => {
-    const service = new TicketService(makeRepo(null), new FakeQueue(), logger);
+    const service = new TicketService(makeRepo(null), new FakeQueue(), new FakeQueue(), logger);
     const result = await service.getById(BASE_ROW.id);
     expect(result).toBeNull();
   });
 
   it('maps snake_case DB columns to camelCase response fields', async () => {
-    const service = new TicketService(makeRepo(BASE_ROW), new FakeQueue(), logger);
+    const service = new TicketService(makeRepo(BASE_ROW), new FakeQueue(), new FakeQueue(), logger);
     const result = await service.getById(BASE_ROW.id);
 
     expect(result).not.toBeNull();
@@ -60,7 +74,7 @@ describe('TicketService.getById — response shaping', () => {
   });
 
   it('returns null for both phases when ticket is queued with no phases', async () => {
-    const service = new TicketService(makeRepo(BASE_ROW), new FakeQueue(), logger);
+    const service = new TicketService(makeRepo(BASE_ROW), new FakeQueue(), new FakeQueue(), logger);
     const result = await service.getById(BASE_ROW.id);
 
     expect(result!.phases.triage).toBeNull();
@@ -80,7 +94,7 @@ describe('TicketService.getById — response shaping', () => {
         finished_at: null,
       },
     };
-    const service = new TicketService(makeRepo(rowWithTriage), new FakeQueue(), logger);
+    const service = new TicketService(makeRepo(rowWithTriage), new FakeQueue(), new FakeQueue(), logger);
     const result = await service.getById(BASE_ROW.id);
 
     expect(result!.phases.triage).toMatchObject({
@@ -117,7 +131,7 @@ describe('TicketService.getById — response shaping', () => {
         finished_at: '2025-01-01T00:00:05Z',
       },
     };
-    const service = new TicketService(makeRepo(completedRow), new FakeQueue(), logger);
+    const service = new TicketService(makeRepo(completedRow), new FakeQueue(), new FakeQueue(), logger);
     const result = await service.getById(BASE_ROW.id);
 
     expect(result!.phases.triage).not.toBeNull();

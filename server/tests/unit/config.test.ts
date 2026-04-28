@@ -21,6 +21,7 @@ const VALID_ENV: NodeJS.ProcessEnv = {
   SQS_PHASE2_DLQ_URL: 'http://localhost:4566/000000000000/phase2DLQ',
   PORTKEY_API_KEY: 'pk-test-key',
   PORTKEY_CONFIG_ID: 'pc-test-id',
+  PORTKEY_PRIMARY_PROVIDER: 'openrouter',
 };
 
 function runConfig(env: NodeJS.ProcessEnv) {
@@ -52,6 +53,14 @@ describe('config module', () => {
     const result = runConfig(envWithout);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('PORTKEY_API_KEY');
+  });
+
+  it('exits 1 and names PORTKEY_PRIMARY_PROVIDER when it is missing', () => {
+    const envWithout = { ...VALID_ENV };
+    delete envWithout.PORTKEY_PRIMARY_PROVIDER;
+    const result = runConfig(envWithout);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('PORTKEY_PRIMARY_PROVIDER');
   });
 
   it('does not print the value of a missing secret in stderr', () => {

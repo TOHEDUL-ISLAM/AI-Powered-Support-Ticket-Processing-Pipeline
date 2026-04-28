@@ -1,6 +1,6 @@
-// US-1.5: ticket submission orchestration — DB insert + SQS enqueue in one transaction
+// US-1.5 + US-4.4 + US-5.3: ticket submission orchestration and replay
 import { withTransaction } from '../db';
-import type { Logger } from '../logger';
+import { PIPELINE_EVENTS, type Logger } from '../logger';
 import type { ITicketQueue } from '../queue/ticket.queue';
 import type {
   ITicketRepository,
@@ -32,15 +32,28 @@ export interface TicketStatusResponse {
   };
 }
 
+export type ReplayOutcome = 'replayed' | 'not_found' | 'not_failed';
+
+export interface ReplayResult {
+  outcome: ReplayOutcome;
+  step?: 'triage' | 'resolution';
+}
+
 export interface ITicketService {
   create(data: CreateTicketInput): Promise<Ticket>;
+  getById(id: string): Promise<TicketStatusResponse | null>;
+  replay(ticketId: string): Promise<ReplayResult>;
+}
+
+export interface ITicketStatusReader {
   getById(id: string): Promise<TicketStatusResponse | null>;
 }
 
 export class TicketService implements ITicketService {
   constructor(
     private readonly repository: ITicketRepository,
-    private readonly queue: ITicketQueue,
+    private readonly phase1Queue: ITicketQueue,
+    private readonly phase2Queue: ITicketQueue,
     private readonly logger: Logger,
   ) {}
 
@@ -50,7 +63,7 @@ export class TicketService implements ITicketService {
         const created = await this.repository.create(client, data);
         this.logger.info({ ticketId: created.id, event: 'ticket.saved' });
 
-        await this.queue.enqueue(created.id);
+        await this.phase1Queue.enqueue(created.id);
         this.logger.info({ ticketId: created.id, event: 'ticket.queued' });
 
         return created;
@@ -65,6 +78,44 @@ export class TicketService implements ITicketService {
       this.logger.warn({ event: 'ticket.rollback_completed' });
       throw err;
     }
+  }
+
+  async replay(ticketId: string): Promise<ReplayResult> {
+    const row = await this.repository.getById(ticketId);
+    if (!row) return { outcome: 'not_found' };
+    if (row.status !== 'failed') return { outcome: 'not_failed' };
+
+    const triageStatus = (row.triage as { status?: string } | null)?.status;
+    const resolutionStatus = (row.resolution as { status?: string } | null)?.status;
+
+    let stepName: 'triage' | 'resolution';
+    if (triageStatus === 'permanently_failed') {
+      stepName = 'triage';
+    } else if (resolutionStatus === 'permanently_failed') {
+      stepName = 'resolution';
+    } else {
+      return { outcome: 'not_failed' };
+    }
+
+    await withTransaction(async (client) => {
+      await this.repository.resetPhase(client, ticketId, stepName);
+      await this.repository.setStatusQueued(client, ticketId);
+      await this.repository.writeReplayEvent(client, ticketId, stepName);
+    });
+
+    if (stepName === 'triage') {
+      await this.phase1Queue.enqueue(ticketId);
+    } else {
+      await this.phase2Queue.enqueue(ticketId);
+    }
+
+    this.logger.info({
+      event: 'ticket.replay.queued',
+      pipelineEvent: PIPELINE_EVENTS.REPLAY_INITIATED,
+      ticketId,
+      step: stepName,
+    });
+    return { outcome: 'replayed', step: stepName };
   }
 
   async getById(id: string): Promise<TicketStatusResponse | null> {

@@ -24,8 +24,11 @@ describe('CreateTicketSchema', () => {
   });
 
   it('fails when subject is missing', () => {
-    const { subject: _, ...rest } = VALID;
-    const result = CreateTicketSchema.safeParse(rest);
+    const result = CreateTicketSchema.safeParse({
+      body: VALID.body,
+      submitter: VALID.submitter,
+      tenant_id: VALID.tenant_id,
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       const issues = formatZodErrors(result.error);
@@ -43,8 +46,10 @@ describe('CreateTicketSchema', () => {
   });
 
   it('reports all failing fields when multiple are missing', () => {
-    const { subject: _s, body: _b, ...rest } = VALID;
-    const result = CreateTicketSchema.safeParse(rest);
+    const result = CreateTicketSchema.safeParse({
+      submitter: VALID.submitter,
+      tenant_id: VALID.tenant_id,
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       const issues = formatZodErrors(result.error);

@@ -1,0 +1,713 @@
+{
+  "info": {
+    "_postman_id": "4d76c652-9c2f-48f7-b15f-2d4c735c2e22",
+    "name": "AI Ticket Pipeline API",
+    "description": "Current HTTP API surface for the AI ticket pipeline service. Import this into Postman, start the server on localhost:3000, and run the requests in order. The create-ticket request saves the returned ticketId into the collection variable automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "ticketId",
+      "value": "c1d6d148-4183-432a-8b6a-07233af725a5",
+      "type": "string"
+    },
+    {
+      "key": "missingTicketId",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "type": "string"
+    },
+    {
+      "key": "failedTicketId",
+      "value": "c1d6d148-4183-432a-8b6a-07233af725a5",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health - Service health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-request-id",
+                "value": "postman-health-check",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/health",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Checks the service dependencies: Postgres, SQS phase1, and SQS phase2. Returns 200 when all dependencies are ok and 503 when any dependency is down.\n\nCurl command:\n```bash\ncurl -s http://localhost:3000/health | jq\n```\n\nExample output:\n```json\n{\n  \"status\": \"ok\",\n  \"service\": \"ai-ticket-pipeline\",\n  \"version\": \"0.1.0\",\n  \"dependencies\": {\n    \"database\": { \"status\": \"ok\", \"latency_ms\": 3 },\n    \"sqs_phase1\": { \"status\": \"ok\", \"latency_ms\": 12 },\n    \"sqs_phase2\": { \"status\": \"ok\", \"latency_ms\": 11 }\n  },\n  \"checked_at\": \"2026-04-29T00:00:00.000Z\"\n}\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('health returns 200 or 503', function () {",
+                  "  pm.expect([200, 503]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('response has status and dependencies', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('status');",
+                  "  pm.expect(json).to.have.property('dependencies');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Healthy example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/health",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\",\n  \"service\": \"ai-ticket-pipeline\",\n  \"version\": \"0.1.0\",\n  \"dependencies\": {\n    \"database\": { \"status\": \"ok\", \"latency_ms\": 3 },\n    \"sqs_phase1\": { \"status\": \"ok\", \"latency_ms\": 12 },\n    \"sqs_phase2\": { \"status\": \"ok\", \"latency_ms\": 11 }\n  },\n  \"checked_at\": \"2026-04-29T00:00:00.000Z\"\n}"
+            },
+            {
+              "name": "Degraded example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/health",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"degraded\",\n  \"service\": \"ai-ticket-pipeline\",\n  \"version\": \"0.1.0\",\n  \"dependencies\": {\n    \"database\": { \"status\": \"down\", \"latency_ms\": 500 },\n    \"sqs_phase1\": { \"status\": \"ok\", \"latency_ms\": 10 },\n    \"sqs_phase2\": { \"status\": \"ok\", \"latency_ms\": 9 }\n  },\n  \"checked_at\": \"2026-04-29T00:00:00.000Z\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Tickets",
+      "item": [
+        {
+          "name": "POST /tickets - Create ticket success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-request-id",
+                "value": "postman-create-ticket",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Login broken\",\n  \"body\": \"I cannot log in to my account since yesterday.\",\n  \"submitter\": \"alice@example.com\",\n  \"tenant_id\": \"demo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3000/tickets",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets"
+              ]
+            },
+            "description": "Creates a ticket, saves it in Postgres with status queued, enqueues it to the Step 1 queue, and immediately returns 202. If successful, the test script stores response.ticketId into the ticketId collection variable.\n\nCurl command:\n```bash\ncurl -s -X POST http://localhost:3000/tickets \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"subject\":\"Login broken\",\"body\":\"I cannot log in to my account since yesterday.\",\"submitter\":\"alice@example.com\",\"tenant_id\":\"demo\"}' \\\n  | jq\n```\n\nExample output:\n```json\n{\n  \"ticketId\": \"c1d6d148-4183-432a-8b6a-07233af725a5\",\n  \"status\": \"queued\",\n  \"createdAt\": \"2026-04-29T00:00:00.000Z\"\n}\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create returns 202', function () {",
+                  "  pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test('response includes ticketId and queued status', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.ticketId).to.be.a('string');",
+                  "  pm.expect(json.status).to.eql('queued');",
+                  "  pm.collectionVariables.set('ticketId', json.ticketId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Created example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"subject\": \"Login broken\",\n  \"body\": \"I cannot log in to my account since yesterday.\",\n  \"submitter\": \"alice@example.com\",\n  \"tenant_id\": \"demo\"\n}"
+                },
+                "url": {
+                  "raw": "http://localhost:3000/tickets",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets"
+                  ]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ticketId\": \"c1d6d148-4183-432a-8b6a-07233af725a5\",\n  \"status\": \"queued\",\n  \"createdAt\": \"2026-04-29T00:00:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /tickets - Validation error",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"\",\n  \"body\": \"\",\n  \"submitter\": \"\",\n  \"tenant_id\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3000/tickets",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets"
+              ]
+            },
+            "description": "Shows the 400 validation response when required fields are empty.\n\nCurl command:\n```bash\ncurl -s -X POST http://localhost:3000/tickets \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"subject\":\"\",\"body\":\"\",\"submitter\":\"\",\"tenant_id\":\"\"}' \\\n  | jq\n```\n\nExample output:\n```json\n{\n  \"error\": \"validation_error\",\n  \"issues\": [\n    { \"field\": \"subject\", \"message\": \"subject is required\" },\n    { \"field\": \"body\", \"message\": \"body is required\" },\n    { \"field\": \"submitter\", \"message\": \"submitter is required\" },\n    { \"field\": \"tenant_id\", \"message\": \"tenant_id is required\" }\n  ]\n}\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('validation returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('response lists field issues', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error).to.eql('validation_error');",
+                  "  pm.expect(json.issues).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Validation error example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"subject\": \"\",\n  \"body\": \"\",\n  \"submitter\": \"\",\n  \"tenant_id\": \"\"\n}"
+                },
+                "url": {
+                  "raw": "http://localhost:3000/tickets",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets"
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"validation_error\",\n  \"issues\": [\n    { \"field\": \"subject\", \"message\": \"subject is required\" },\n    { \"field\": \"body\", \"message\": \"body is required\" },\n    { \"field\": \"submitter\", \"message\": \"submitter is required\" },\n    { \"field\": \"tenant_id\", \"message\": \"tenant_id is required\" }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /tickets/:id - Current ticket status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/tickets/{{ticketId}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets",
+                "{{ticketId}}"
+              ]
+            },
+            "description": "Reads a saved ticket by ID. Use the provided ticketId or run the create-ticket request first to update the variable.\n\nCurl command:\n```bash\ncurl -s http://localhost:3000/tickets/c1d6d148-4183-432a-8b6a-07233af725a5 | jq\n```\n\nExample output:\n```json\n{\n  \"ticketId\": \"c1d6d148-4183-432a-8b6a-07233af725a5\",\n  \"tenantId\": \"demo\",\n  \"submitter\": \"alice@example.com\",\n  \"subject\": \"Login broken\",\n  \"status\": \"completed\",\n  \"phases\": {\n    \"triage\": { \"status\": \"success\", \"attemptCount\": 1, \"result\": {} },\n    \"resolution\": { \"status\": \"success\", \"attemptCount\": 1, \"result\": {} }\n  }\n}\n```"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('get ticket returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('response includes phases object', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('ticketId');",
+                  "  pm.expect(json).to.have.property('phases');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Ticket status example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/tickets/{{ticketId}}",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets",
+                    "{{ticketId}}"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ticketId\": \"c1d6d148-4183-432a-8b6a-07233af725a5\",\n  \"tenantId\": \"demo\",\n  \"submitter\": \"alice@example.com\",\n  \"subject\": \"Login broken\",\n  \"status\": \"completed\",\n  \"createdAt\": \"2026-04-29T00:00:00.000Z\",\n  \"updatedAt\": \"2026-04-29T00:00:05.000Z\",\n  \"phases\": {\n    \"triage\": {\n      \"status\": \"success\",\n      \"attemptCount\": 1,\n      \"result\": {\n        \"category\": \"account_access\",\n        \"priority\": \"high\",\n        \"sentiment\": \"frustrated\",\n        \"escalation_needed\": false,\n        \"routing_target\": \"technical_support\",\n        \"summary\": \"Customer cannot log in.\"\n      },\n      \"providerUsed\": \"openrouter\",\n      \"startedAt\": \"2026-04-29T00:00:01.000Z\",\n      \"finishedAt\": \"2026-04-29T00:00:02.000Z\"\n    },\n    \"resolution\": {\n      \"status\": \"success\",\n      \"attemptCount\": 1,\n      \"result\": {\n        \"customer_reply\": \"We are sorry you are having trouble logging in. Please try resetting your password.\",\n        \"internal_note\": \"Likely account access issue.\",\n        \"recommended_actions\": [\"Verify account status\", \"Send password reset link\"]\n      },\n      \"providerUsed\": \"openrouter\",\n      \"startedAt\": \"2026-04-29T00:00:03.000Z\",\n      \"finishedAt\": \"2026-04-29T00:00:05.000Z\"\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /tickets/:id - Invalid UUID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/tickets/not-a-uuid",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets",
+                "not-a-uuid"
+              ]
+            },
+            "description": "Shows the 400 error returned when the ticket ID path parameter is not a UUID.\n\nCurl command:\n```bash\ncurl -s http://localhost:3000/tickets/not-a-uuid | jq\n```\n\nExample output:\n```json\n{\n  \"error\": \"invalid_ticket_id\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "Invalid UUID example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/tickets/not-a-uuid",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets",
+                    "not-a-uuid"
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"invalid_ticket_id\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "GET /tickets/:id - Not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/tickets/{{missingTicketId}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets",
+                "{{missingTicketId}}"
+              ]
+            },
+            "description": "Shows the 404 response for a valid UUID that does not exist in the database.\n\nCurl command:\n```bash\ncurl -s http://localhost:3000/tickets/00000000-0000-0000-0000-000000000000 | jq\n```\n\nExample output:\n```json\n{\n  \"error\": \"ticket_not_found\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "Not found example",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/tickets/{{missingTicketId}}",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets",
+                    "{{missingTicketId}}"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"ticket_not_found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /tickets/:id/replay - Replay permanently failed ticket",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/tickets/{{failedTicketId}}/replay",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets",
+                "{{failedTicketId}}",
+                "replay"
+              ]
+            },
+            "description": "Requeues a ticket from the permanently failed phase only. This succeeds only when the ticket status is failed and one phase has status permanently_failed.\n\nCurl command:\n```bash\ncurl -s -X POST http://localhost:3000/tickets/c1d6d148-4183-432a-8b6a-07233af725a5/replay | jq\n```\n\nExample output:\n```json\n{\n  \"ticketId\": \"c1d6d148-4183-432a-8b6a-07233af725a5\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "Replay accepted example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/tickets/{{failedTicketId}}/replay",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets",
+                    "{{failedTicketId}}",
+                    "replay"
+                  ]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ticketId\": \"c1d6d148-4183-432a-8b6a-07233af725a5\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /tickets/:id/replay - Ticket not failed",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/tickets/{{ticketId}}/replay",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets",
+                "{{ticketId}}",
+                "replay"
+              ]
+            },
+            "description": "Shows the 409 conflict response when replay is requested for a ticket that is not permanently failed.\n\nCurl command:\n```bash\ncurl -s -X POST http://localhost:3000/tickets/c1d6d148-4183-432a-8b6a-07233af725a5/replay | jq\n```\n\nExample output:\n```json\n{\n  \"error\": \"ticket_not_permanently_failed\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "Not failed example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/tickets/{{ticketId}}/replay",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets",
+                    "{{ticketId}}",
+                    "replay"
+                  ]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"ticket_not_permanently_failed\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /tickets/:id/replay - Invalid UUID",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/tickets/not-a-uuid/replay",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets",
+                "not-a-uuid",
+                "replay"
+              ]
+            },
+            "description": "Shows the 400 error returned when the replay ticket ID path parameter is not a UUID.\n\nCurl command:\n```bash\ncurl -s -X POST http://localhost:3000/tickets/not-a-uuid/replay | jq\n```\n\nExample output:\n```json\n{\n  \"error\": \"invalid_ticket_id\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "Invalid replay UUID example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/tickets/not-a-uuid/replay",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets",
+                    "not-a-uuid",
+                    "replay"
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"invalid_ticket_id\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /tickets/:id/replay - Not found",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/tickets/{{missingTicketId}}/replay",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "tickets",
+                "{{missingTicketId}}",
+                "replay"
+              ]
+            },
+            "description": "Shows the 404 response when replay is requested for a valid UUID that does not exist.\n\nCurl command:\n```bash\ncurl -s -X POST http://localhost:3000/tickets/00000000-0000-0000-0000-000000000000/replay | jq\n```\n\nExample output:\n```json\n{\n  \"error\": \"ticket_not_found\"\n}\n```"
+          },
+          "response": [
+            {
+              "name": "Replay not found example",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "http://localhost:3000/tickets/{{missingTicketId}}/replay",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "3000",
+                  "path": [
+                    "tickets",
+                    "{{missingTicketId}}",
+                    "replay"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"ticket_not_found\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

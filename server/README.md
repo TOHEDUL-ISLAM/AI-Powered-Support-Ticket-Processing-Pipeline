@@ -34,7 +34,7 @@ cd server && npm install
 
 # 4. Configure environment
 cp .env.example .env
-# Fill in: DATABASE_URL, PORTKEY_API_KEY, PORTKEY_CONFIG_ID
+# Fill in: DATABASE_URL, PORTKEY_API_KEY, PORTKEY_CONFIG_ID, PORTKEY_PRIMARY_PROVIDER
 
 # 5. Provision SQS queues + Postgres
 npm run setup
@@ -70,6 +70,47 @@ Running `npm run setup` a second time is safe — all operations are idempotent.
 
 ---
 
+## AI Gateway Setup
+
+All AI calls go through Portkey via `src/ai/`. Do not import Anthropic, OpenAI,
+Gemini, or other provider SDKs anywhere else in the codebase.
+
+Required environment variables:
+
+```bash
+PORTKEY_API_KEY=<portkey-api-key>
+PORTKEY_CONFIG_ID=<portkey-config-id>
+PORTKEY_PRIMARY_PROVIDER=<primary-provider-name>
+```
+
+Configure `PORTKEY_CONFIG_ID` in the Portkey dashboard with:
+
+- Provider priority matching your production route, for example OpenRouter → Groq → backend
+- Fallback triggers: rate limits, 5xx provider errors, and request timeouts
+- Credentials/virtual keys for every provider used by that route
+- JSON response mode or equivalent response validation support
+
+`PORTKEY_PRIMARY_PROVIDER` must match the first provider in the active Portkey
+route. The app uses it only to decide whether `fallback` should be true and to
+write accurate `primary_provider` metadata. You can switch providers in Portkey
+without changing source code.
+
+Manual fallback smoke checks:
+
+1. Disable the primary provider in the Portkey dashboard config. Submit a ticket
+   and confirm the phase record stores the next provider in `provider_used`.
+2. Disable the first two providers. Submit a ticket and confirm the third
+   provider is stored in `provider_used`.
+3. Disable all providers. Submit a ticket and confirm the worker logs a typed
+   AI gateway failure and the SQS message remains retryable.
+4. Inspect `ticket_events` for `provider_fallback` when any non-primary provider
+   handles a phase.
+
+Automated tests inject fake AI gateway responses, so normal local test runs do
+not require live Portkey network access.
+
+---
+
 ## Scripts
 
 | Script | Command | Description |
@@ -86,6 +127,102 @@ Running `npm run setup` a second time is safe — all operations are idempotent.
 | `lint` | `npm run lint` | ESLint across src/ and tests/ |
 | `format` | `npm run format` | Prettier write |
 | `migrate` | `npm run migrate` | Run pending DB migrations |
+| `socket:client` | `npm run socket:client -- ticket <ticketId>` | Subscribe to live ticket or tenant updates |
+
+---
+
+## Quality and Observability Checks
+
+Run these before calling a story complete:
+
+```bash
+npm run build
+npm run lint
+npm run test:unit
+npm run test:integration
+npm run test:coverage
+```
+
+Integration and coverage runs use real Postgres and LocalStack queues. Stop
+`npm run dev` before running them, because the dev workers also consume SQS
+messages and can race the tests.
+
+Structured logs are emitted as JSON in non-development environments and include
+standard service metadata:
+
+```json
+{
+  "service": "ai-ticket-pipeline",
+  "environment": "test",
+  "version": "0.1.0",
+  "event": "phase1.triage.completed",
+  "pipelineEvent": "step_completed",
+  "ticketId": "..."
+}
+```
+
+Pipeline lifecycle logs use stable `pipelineEvent` values such as
+`step_started`, `step_completed`, `step_failed`, `retry_scheduled`,
+`provider_fallback`, `permanently_failed`, `pipeline_complete`, and
+`replay_initiated`. Sensitive values such as passwords, API keys,
+authorization headers, Portkey keys, and database URLs are redacted by Pino.
+
+Coverage is enforced at 80% for lines, statements, branches, and functions
+across the core `src/` modules. Server boot files and type-only files are
+excluded from the threshold because they are covered by smoke/manual checks
+rather than unit behavior.
+
+---
+
+## Live Update Demo
+
+Socket.io clients subscribe to rooms and receive one event name:
+
+```txt
+ticket:update
+```
+
+Subscribe to one ticket:
+
+```bash
+npm run socket:client -- ticket <ticketId>
+```
+
+Subscribe to every ticket under a tenant:
+
+```bash
+npm run socket:client -- tenant <tenantId>
+```
+
+Typical terminal demo:
+
+```bash
+# Terminal 1: start LocalStack from the repo root
+uv run localstack start
+
+# Terminal 2: start the app and workers from server/
+npm run dev
+
+# Terminal 3: subscribe to all updates for tenant demo before submitting
+npm run socket:client -- tenant demo
+
+# Terminal 4: submit a ticket and capture the ID
+TICKET_ID=$(curl -s -X POST http://localhost:3000/tickets \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"Login broken","body":"I cannot log in","submitter":"alice@example.com","tenant_id":"demo"}' \
+  | jq -r '.ticketId')
+```
+
+For a full pipeline run, the client receives lifecycle updates such as:
+
+```txt
+step_started
+step_completed
+pipeline_completed
+ticket_failed
+```
+
+The final `pipeline_completed.data` payload is shaped to match `GET /tickets/:id`.
 
 ---
 
